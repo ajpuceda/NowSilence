@@ -5,29 +5,31 @@ import android.service.notification.StatusBarNotification
 import android.util.Log
 import com.nowsilence.app.data.ai.LocalClassifierAI
 import com.nowsilence.app.data.local.NotificationEntity
-import com.nowsilence.app.data.local.NowSilenceDatabase
-import com.nowsilence.app.data.repository.NotificationRepositoryImpl
+import com.nowsilence.app.data.local.UserSettingsDataStore
 import com.nowsilence.app.domain.model.NotificationPriority
 import com.nowsilence.app.domain.repository.NotificationRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 
 /**
  * Listener de notificaciones de NowSilence.
  *
- * Intercepta cada notificación entrante, la clasifica con la IA local,
- * silencia las LOW y persiste NORMAL/LOW en Room (historial + resumen).
+ * Respeta el estado del filtro persistido en DataStore: si está
+ * desactivado, toda notificación pasa sin procesarse con la IA.
  */
 class NotificationKeeperService : NotificationListenerService() {
 
-    private val classifier by lazy { LocalClassifierAI.getInstance(this) }
+    private val classifier: LocalClassifierAI by lazy { LocalClassifierAI.getInstance(this) }
     private val repository: NotificationRepository by lazy {
-        NotificationRepositoryImpl(
-            NowSilenceDatabase.getInstance(this).notificationDao()
-        )
+        org.koin.core.context.GlobalContext.get().get()
+    }
+    private val settingsDataStore: UserSettingsDataStore by lazy {
+        UserSettingsDataStore(this)
     }
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -45,6 +47,13 @@ class NotificationKeeperService : NotificationListenerService() {
 
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
         if (sbn == null || !shouldProcess(sbn)) return
+
+        // Verificación inicial: si el filtro está desactivado, la
+        // notificación pasa sin procesarse con la IA.
+        if (!isFilterEnabled()) {
+            Log.d(TAG, "Filtro desactivado: notificación de ${sbn.packageName} permitida")
+            return
+        }
 
         val extras = sbn.notification.extras
         val title = extras.getCharSequence("android.title")?.toString().orEmpty()
@@ -69,7 +78,7 @@ class NotificationKeeperService : NotificationListenerService() {
             }
         }
 
-        if (priority == NotificationPriority.LOW && isFilterEnabled()) {
+        if (priority == NotificationPriority.LOW) {
             silenceNotification(sbn)
         }
         // CRITICAL rompe el filtro y suena sin registrarse en el historial.
@@ -91,9 +100,8 @@ class NotificationKeeperService : NotificationListenerService() {
         }
     }
 
-    private fun isFilterEnabled(): Boolean {
-        // TODO Fase 5: leer desde DataStore respetando el switch del Dashboard.
-        return true
+    private fun isFilterEnabled(): Boolean = runBlocking {
+        settingsDataStore.isFilterEnabled.first()
     }
 
     companion object {
