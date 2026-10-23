@@ -19,10 +19,9 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.material.icons.filled.Campaign
-import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -30,6 +29,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -39,9 +39,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.nowsilence.app.data.local.NotificationEntity
+import com.nowsilence.app.domain.model.NotificationPriority
 import com.nowsilence.app.presentation.theme.NowSilenceTheme
+import com.nowsilence.app.presentation.viewmodel.DigestViewModel
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 data class DigestItem(
     val appName: String,
@@ -56,50 +64,16 @@ data class DigestCategory(
     val items: List<DigestItem>
 )
 
-private val sampleCategories = listOf(
-    DigestCategory(
-        name = "Mensajes Urgentes",
-        icon = Icons.Filled.Notifications,
-        summary = "2 notificaciones priorizadas por la IA",
-        items = listOf(
-            DigestItem("WhatsApp", "Ana: ¿Pudiste revisar el documento?", "09:41"),
-            DigestItem("Slack", "Deploy en producción completado", "10:15")
-        )
-    ),
-    DigestCategory(
-        name = "Social",
-        icon = Icons.Filled.Favorite,
-        summary = "14 notificaciones agrupadas silenciosamente",
-        items = listOf(
-            DigestItem("Instagram", "3 nuevos me gusta en tu foto", "11:02"),
-            DigestItem("TikTok", "maria_te ha mencionado", "11:45"),
-            DigestItem("X", "5 nuevas interacciones", "12:30")
-        )
-    ),
-    DigestCategory(
-        name = "Promociones",
-        icon = Icons.Filled.ShoppingCart,
-        summary = "23 notificaciones bloqueadas",
-        items = listOf(
-            DigestItem("Amazon", "¡Oferta flash! 40% en electrónicos", "08:20"),
-            DigestItem("Booking", "Precios bajaron en tu destino", "13:10")
-        )
-    ),
-    DigestCategory(
-        name = "Marketing",
-        icon = Icons.Filled.Campaign,
-        summary = "9 notificaciones bloqueadas",
-        items = listOf(
-            DigestItem("Spotify", "Nueva playlist para ti", "07:55"),
-            DigestItem("Netflix", "Nuevos episodios disponibles", "16:22")
-        )
-    )
-)
-
 @Composable
 fun DigestScreen(
+    viewModel: DigestViewModel = viewModel(),
     modifier: Modifier = Modifier
 ) {
+    val notifications by viewModel.todayNotifications.collectAsState()
+    val uiState by viewModel.summary.collectAsState()
+
+    val categories = remember(notifications) { buildCategories(notifications) }
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -112,17 +86,82 @@ fun DigestScreen(
             modifier = Modifier.padding(vertical = 16.dp)
         )
 
-        LazyColumn(
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            items(sampleCategories) { category ->
-                ExpandableCategoryCard(category = category)
+        if (categories.isEmpty()) {
+            Column(
+                modifier = Modifier.fillMaxSize(),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = "Sin notificaciones silenciadas hoy.\nDisfruta del silencio.",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center
+                )
             }
-            item {
-                Spacer(modifier = Modifier.height(16.dp))
+        } else {
+            LazyColumn(
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                item {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(20.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.primaryContainer
+                        ),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+                    ) {
+                        Text(
+                            text = uiState.summary,
+                            style = MaterialTheme.typography.bodyMedium,
+                            modifier = Modifier.padding(20.dp)
+                        )
+                    }
+                }
+                items(categories) { category ->
+                    ExpandableCategoryCard(category = category)
+                }
+                item {
+                    Spacer(modifier = Modifier.height(16.dp))
+                }
             }
         }
     }
+}
+
+private fun buildCategories(notifications: List<NotificationEntity>): List<DigestCategory> {
+    val timeFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
+    return notifications
+        .groupBy { it.category }
+        .map { (category, items) ->
+            DigestCategory(
+                name = categoryLabel(category),
+                icon = categoryIcon(category),
+                summary = "${items.size} notificaciones silenciadas",
+                items = items.map {
+                    DigestItem(
+                        appName = it.packageName.substringAfterLast('.'),
+                        title = it.title.ifBlank { it.message },
+                        time = timeFormat.format(Date(it.timestamp))
+                    )
+                }
+            )
+        }
+        .sortedBy { it.name }
+}
+
+private fun categoryLabel(category: String): String = when (category) {
+    NotificationPriority.CRITICAL.name -> "Priorizadas"
+    NotificationPriority.NORMAL.name -> "Guardadas en historial"
+    NotificationPriority.LOW.name -> "Silenciadas"
+    else -> category
+}
+
+private fun categoryIcon(category: String): ImageVector = when (category) {
+    NotificationPriority.CRITICAL.name -> Icons.Filled.Notifications
+    NotificationPriority.LOW.name -> Icons.Filled.ShoppingCart
+    else -> Icons.Filled.Favorite
 }
 
 @Composable
