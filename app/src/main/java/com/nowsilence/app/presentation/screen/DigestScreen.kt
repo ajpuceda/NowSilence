@@ -42,11 +42,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.viewmodel.compose.viewModel
 import com.nowsilence.app.data.local.NotificationEntity
 import com.nowsilence.app.domain.model.NotificationPriority
 import com.nowsilence.app.presentation.theme.NowSilenceTheme
 import com.nowsilence.app.presentation.viewmodel.DigestViewModel
+import org.koin.androidx.compose.koinViewModel
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -66,7 +66,7 @@ data class DigestCategory(
 
 @Composable
 fun DigestScreen(
-    viewModel: DigestViewModel = viewModel(),
+    viewModel: DigestViewModel = koinViewModel(),
     modifier: Modifier = Modifier
 ) {
     val notifications by viewModel.todayNotifications.collectAsState()
