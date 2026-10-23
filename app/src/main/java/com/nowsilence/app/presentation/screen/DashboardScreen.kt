@@ -16,23 +16,21 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.NotificationsOff
-import androidx.compose.material.icons.filled.Work
 import androidx.compose.material.icons.filled.CenterFocusStrong
+import androidx.compose.material.icons.filled.NotificationsOff
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Work
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -42,6 +40,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.nowsilence.app.presentation.theme.NowSilenceTheme
+import com.nowsilence.app.presentation.viewmodel.DashboardViewModel
+import org.koin.androidx.compose.koinViewModel
 
 enum class FilterProfile(val label: String, val icon: ImageVector) {
     WORK("Modo Trabajo", Icons.Filled.Work),
@@ -51,11 +51,16 @@ enum class FilterProfile(val label: String, val icon: ImageVector) {
 
 @Composable
 fun DashboardScreen(
+    viewModel: DashboardViewModel = koinViewModel(),
     modifier: Modifier = Modifier
 ) {
-    var isFilterEnabled by remember { mutableStateOf(false) }
-    var selectedProfile by remember { mutableStateOf(FilterProfile.PERSONAL) }
-    val blockedToday = remember { mutableStateOf(47) }
+    val isFilterEnabled by viewModel.isFilterEnabled.collectAsState()
+    val selectedProfileName by viewModel.filterProfile.collectAsState()
+    val blockedToday by viewModel.blockedTodayCount.collectAsState()
+
+    val selectedProfile = runCatching {
+        FilterProfile.valueOf(selectedProfileName)
+    }.getOrDefault(FilterProfile.PERSONAL)
 
     Column(
         modifier = modifier
@@ -67,15 +72,15 @@ fun DashboardScreen(
 
         FilterSwitchCard(
             isEnabled = isFilterEnabled,
-            onToggle = { isFilterEnabled = it }
+            onToggle = { viewModel.setFilterEnabled(it) }
         )
 
         ProfileSelector(
             selected = selectedProfile,
-            onSelect = { selectedProfile = it }
+            onSelect = { viewModel.setFilterProfile(it.name) }
         )
 
-        BlockedCounterCard(count = blockedToday.value)
+        BlockedCounterCard(count = blockedToday)
 
         Spacer(modifier = Modifier.height(4.dp))
     }
