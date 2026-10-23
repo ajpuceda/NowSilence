@@ -2,6 +2,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.ksp)
 }
 
 android {
@@ -62,10 +63,11 @@ dependencies {
     implementation(libs.koin.android)
     implementation(libs.koin.compose)
 
-    // Local persistence
-    implementation(libs.androidx.datastore.preferences)
+    // Local persistence (Room)
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
+    ksp(libs.androidx.room.compiler)
+    implementation(libs.androidx.datastore.preferences)
 
     // AI On-Device (Google AI Edge SDK - MediaPipe GenAI)
     // Se activará en fases posteriores para inferencia LLM local
