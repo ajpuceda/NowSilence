@@ -4,20 +4,32 @@ import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
 import android.util.Log
 import com.nowsilence.app.data.ai.LocalClassifierAI
-import com.nowsilence.app.domain.model.CapturedNotification
+import com.nowsilence.app.data.local.NotificationEntity
+import com.nowsilence.app.data.local.NowSilenceDatabase
+import com.nowsilence.app.data.repository.NotificationRepositoryImpl
 import com.nowsilence.app.domain.model.NotificationPriority
+import com.nowsilence.app.domain.repository.NotificationRepository
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 
 /**
  * Listener de notificaciones de NowSilence.
  *
- * Intercepta cada notificación entrante en tiempo real, la clasifica
- * con la IA local y decide: silenciar (cancelar) o permitir.
- * Solo opera si el usuario ha activado el filtro (flag persistido
- * en DataStore; se conectará con el ViewModel de la Fase 4).
+ * Intercepta cada notificación entrante, la clasifica con la IA local,
+ * silencia las LOW y persiste NORMAL/LOW en Room (historial + resumen).
  */
 class NotificationKeeperService : NotificationListenerService() {
 
     private val classifier by lazy { LocalClassifierAI.getInstance(this) }
+    private val repository: NotificationRepository by lazy {
+        NotificationRepositoryImpl(
+            NowSilenceDatabase.getInstance(this).notificationDao()
+        )
+    }
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override fun onCreate() {
         super.onCreate()
@@ -27,6 +39,7 @@ class NotificationKeeperService : NotificationListenerService() {
 
     override fun onDestroy() {
         classifier.release()
+        serviceScope.cancel()
         super.onDestroy()
     }
 
@@ -40,28 +53,31 @@ class NotificationKeeperService : NotificationListenerService() {
 
         val priority = classifier.classifyNotification(title, text)
 
-        val captured = CapturedNotification(
-            packageName = packageName,
-            title = title,
-            text = text,
-            postedAtMillis = sbn.postTime,
-            priority = priority
-        )
-
         Log.d(TAG, "Notificación [$packageName] prioridad=$priority título=$title")
+
+        if (priority == NotificationPriority.NORMAL || priority == NotificationPriority.LOW) {
+            serviceScope.launch {
+                repository.saveNotification(
+                    NotificationEntity(
+                        packageName = packageName,
+                        title = title,
+                        message = text,
+                        timestamp = sbn.postTime,
+                        category = priority.name
+                    )
+                )
+            }
+        }
 
         if (priority == NotificationPriority.LOW && isFilterEnabled()) {
             silenceNotification(sbn)
         }
-        // CRITICAL y NORMAL se permiten pasar; NORMAL quedará registrada
-        // en el historial y LOW iría al resumen diario (persistencia en Fase 4).
+        // CRITICAL rompe el filtro y suena sin registrarse en el historial.
     }
 
     private fun shouldProcess(sbn: StatusBarNotification): Boolean {
-        // Ignorar notificaciones del propio sistema y de NowSilence
         if (sbn.packageName == applicationContext.packageName) return false
         if (sbn.packageName == "com.android.systemui") return false
-        // Ignorar notificaciones en curso (llamadas, música, navegación)
         if (sbn.isOngoing) return false
         return true
     }
@@ -76,8 +92,7 @@ class NotificationKeeperService : NotificationListenerService() {
     }
 
     private fun isFilterEnabled(): Boolean {
-        // Fase 4: leer desde DataStore de configuración del usuario.
-        // Por ahora el filtro está activo por defecto tras conceder el permiso.
+        // TODO Fase 5: leer desde DataStore respetando el switch del Dashboard.
         return true
     }
 
