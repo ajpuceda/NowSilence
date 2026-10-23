@@ -1,0 +1,41 @@
+# Gradle
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# Local configuration
+local.properties
+
+# IntelliJ / Android Studio
+.idea/
+*.iml
+*.iws
+*.ipr
+captures/
+.navigation/
+
+# Kotlin
+*.kotlin_metadata
+
+# Signing
+*.jks
+*.keystore
+
+# OS
+.DS_Store
+
+# Caches
+.cxx/
+*.apk
+*.aab
+*.ap_
+*.dex
+
+# Google Services / secrets
+google-services.json
+
+# AI Edge model files (grandes binarios, no versionar)
+*.task
+*.tflite
+*.bin
+app/src/main/assets/models/
